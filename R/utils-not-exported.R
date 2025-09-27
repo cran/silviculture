@@ -1,15 +1,16 @@
 
 
-#' Calculates dominant height
+#' Calculates dominant height or dominant diameter
 #'
 #' @param nmax Index of first diametric class with > 100 trees; if there are no
 #'    100 trees, it is the index of the maximum
 #' @param ntress Number of trees per hectare
-#' @param height Height of the diametric class
+#' @param metric Height of the diametric class or diameter
+#' @param max_trees Number to trees to calculate dominant metric
 #'
 #' @return A numeric vector
 #' @keywords internal
-calc_dominant_height <- function(nmax, ntress, height) {
+calc_dominant_metric <- function(nmax, ntress, metric, max_trees = 100) {
 
   # initialize n and empty list
   n <- 0
@@ -20,14 +21,14 @@ calc_dominant_height <- function(nmax, ntress, height) {
     ## sum previous trees plus new trees
     n <- n + ntress[i]
     ## are we over 100 trees already?
-    if (n > 100) {
-      new_trees <- ntress[i] - n + 100
+    if (n > max_trees) {
+      new_trees <- ntress[i] - n + max_trees
       ## add to list and exit loop
-      l[[i]] <- c(new_trees, height[i])
+      l[[i]] <- c(new_trees, metric[i])
       break
     } else {
       ## add to list
-      l[[i]] <- c(ntress[i], height[i])
+      l[[i]] <- c(ntress[i], metric[i])
     }
   }
 
@@ -40,6 +41,39 @@ calc_dominant_height <- function(nmax, ntress, height) {
   # Calculate the weighted mean
   weighted_sum / sum(first_elements, na.rm = TRUE)
 
+}
+
+
+
+
+
+#' Calculates number of trees until reaching a maximum number of trees
+#'
+#' @param ntrees Number of trees per hectare
+#' @param cumtrees Accumulated trees and sorted from thickest to thinner diameter
+#' @param max_trees Number to trees to calculate dominant metric
+#'
+#' @return A numeric vector
+#' @keywords internal
+calc_accumulated_trees <- function(ntrees, cumtrees, max_trees) {
+
+  ## row with with accumulated max_trees
+  row_with_target <- which(cumtrees >= max_trees)[1]
+
+  ## calculate trees needed from each diameter class
+  trees_needed <- rep(0, length(ntrees))
+
+  ## for rows before the target row, take all trees
+  if (row_with_target > 1) {
+    trees_needed[1:(row_with_target-1)] <- ntrees[1:(row_with_target-1)]
+  }
+
+  ## for the target row, calculate remaining trees needed
+  trees_from_previous <- ifelse(row_with_target == 1, 0, cumtrees[row_with_target-1])
+  trees_needed[row_with_target] <- max_trees - trees_from_previous
+
+  ## return
+  return(trees_needed)
 }
 
 
@@ -95,7 +129,7 @@ weighted_sd <- function(var, wt) {
 #' @param students_t Student's T value
 #' @param max_n maximum number of plots in the area
 #' @param cv coefficient of variation
-#' @param max_error maximum allowed error
+#' @param max_error maximum allowed relative error
 #'
 #' @return A length-one numeric vector
 #' @keywords internal
@@ -103,5 +137,88 @@ calc_n_simple <- function(students_t, max_n, cv, max_error) {
 
   ## calculate n
   n <- (students_t**2 * cv**2) / ((max_error * 100)**2 + (students_t**2 * cv**2 / max_n))
+  ceiling(n)
+}
+
+
+
+
+
+#' Calculates number of plots for optimal allocation with constant cost
+#'
+#' @param students_t Student's T value
+#' @param pj proportion of each stratum
+#' @param sj variance of each stratum
+#' @param max_n maximum number of plots in the area
+#' @param max_error maximum allowed absolute error
+#'
+#' @return A length-one numeric vector
+#' @keywords internal
+calc_n_optimal <- function(students_t, pj, sj, max_n, max_error) {
+
+  ## numerator Pj * Sj
+  pjsj_num <- sum(pj * sqrt(sj))**2
+
+  ## denominator Pj * Sj2
+  pjsj_den <- sum(pj * sj)
+
+  ## calculate n
+  n <- (students_t**2 * pjsj_num) / (max_error**2 + (students_t**2 * pjsj_den / max_n) )
+  ceiling(n)
+}
+
+
+
+
+
+#' Calculates number of plots for proportional allocation
+#'
+#' @param students_t Student's T value
+#' @param pj proportion of each stratum
+#' @param sj variance of each stratum
+#' @param max_n maximum number of plots in the area
+#' @param max_error maximum allowed absolute error
+#'
+#' @return A length-one numeric vector
+#' @keywords internal
+calc_n_prop <- function(students_t, pj, sj, max_n, max_error) {
+
+  ## numerator Pj * Sj2
+  pjsj_num <- sum(pj * sj)
+
+  ## denominator Pj * Sj2
+  pjsj_den <- sum(pj * sj)
+
+  ## calculate n
+  n <- (students_t**2 * pjsj_num) / (max_error**2 + (students_t**2 * pjsj_den / max_n) )
+  ceiling(n)
+}
+
+
+
+
+
+#' Calculates number of plots for optimal allocation with variable cost
+#'
+#' @param students_t Student's T value
+#' @param pj proportion of each stratum
+#' @param sj variance of each stratum
+#' @param cost cost of each stratum
+#' @param max_n maximum number of plots in the area
+#' @param max_error maximum allowed absolute error
+#'
+#' @return A length-one numeric vector
+#' @keywords internal
+calc_n_cost <- function(students_t, pj, sj, cost, max_n, max_error) {
+
+  ## numerator Pj * Sj
+  pjsj_num1 <- sum(pj * sqrt(cost) * sqrt(sj))
+  pjsj_num2 <- sum(pj * sqrt(sj) / sqrt(cost))
+
+  ## denominator Pj * Sj2
+  pjsj_den <- sum(pj * sj)
+
+  ## calculate n
+  n <- (students_t**2 * pjsj_num1 * pjsj_num2) / (max_error**2 + (students_t**2 * pjsj_den / max_n) )
   ceiling(n)
 }
